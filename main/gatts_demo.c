@@ -34,7 +34,9 @@
 #include "esp_gatt_common_api.h"
 
 #include "sdkconfig.h"
-#include "MAX30102.h"
+//#include "MAX30102.h"
+
+#include "driver/i2c.h"
 
 
 #define GATTS_TAG "GATTS_DEMO"
@@ -42,6 +44,7 @@
 ///Declare the static function
 static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 static void gatts_profile_b_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
+
 
 #define GATTS_SERVICE_UUID_TEST_A   0x00FF
 #define GATTS_CHAR_UUID_TEST_A      0xFF01
@@ -197,6 +200,11 @@ uint8_t notifyed_b_en=0;
 
 void example_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
+void max30102_init(void);
+static esp_err_t max30102_Bus_Read(uint8_t* data_rd, uint16_t ReadAddr);
+static esp_err_t max30102_Bus_Write(uint8_t data_wr, uint16_t WriteAddr);
+static esp_err_t i2c_master_init(void);
+
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
@@ -762,7 +770,11 @@ void app_main(void)
         ESP_LOGE(GATTS_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
 
-    i2c_master_init();
+    //--------------------------------------------------------------------------------------------------------------------//
+    // lpx add for i2c test
+    //--------------------------------------------------------------------------------------------------------------------//
+    ret = i2c_master_init();
+    ESP_LOGE(GATTS_TAG, "i2c_master_init(), error code = %x", ret);
     while(1)
     {
     	if (notifyed_a_en == 1)
@@ -781,9 +793,118 @@ void app_main(void)
 
     	max30102_init();
     	ret = max30102_Bus_Read(0x1f, &temp_num);
-    	printf("当前温度 = %d\r\n", temp_num);
+    	printf("current temperature = %d\r\n", temp_num);
     	vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+		ret = max30102_Bus_Read(0xff, &temp_num);
+    	printf("Part ID =  0x%x\r\n", temp_num);
       }
 
     return;
 }
+
+//--------------------------------------------------------------------------------------------------------------------//
+// lpx add for i2c drive
+//--------------------------------------------------------------------------------------------------------------------//
+//#define CONFIG_I2C_MASTER_PORT_NUM  0
+//#define _I2C_NUMBER(num) I2C_NUM_##num
+//#define I2C_NUMBER(num) _I2C_NUMBER(num)
+//#define I2C_MASTER_NUM I2C_NUMBER(CONFIG_I2C_MASTER_PORT_NUM) /*!< I2C port number for master dev */
+#define I2C_MASTER_NUM I2C_NUM_0
+
+#define CONFIG_I2C_MASTER_SCL 13
+#define CONFIG_I2C_MASTER_SDA 15
+#define I2C_MASTER_SCL_IO CONFIG_I2C_MASTER_SCL               /*!< gpio number for I2C master clock */
+#define I2C_MASTER_SDA_IO CONFIG_I2C_MASTER_SDA               /*!< gpio number for I2C master data  */
+
+#define CONFIG_I2C_MASTER_FREQUENCY 100000						//100KHz
+#define I2C_MASTER_FREQ_HZ CONFIG_I2C_MASTER_FREQUENCY        /*!< I2C master clock frequency */
+
+#define I2C_MASTER_TX_BUF_DISABLE 0                           /*!< I2C master doesn't need buffer */
+#define I2C_MASTER_RX_BUF_DISABLE 0                           /*!< I2C master doesn't need buffer */
+#define MAX30102_DeviceAddr 0xAE//设备的I2C的地址
+
+
+#define WRITE_BIT 0x00                      /*!< I2C master write */
+#define READ_BIT 0x01                       /*!< I2C master read  */
+
+#define ACK_CHECK_EN 0x1                        /*!< I2C master will check ack from slave*/
+#define ACK_CHECK_DIS 0x0                       /*!< I2C master will not check ack from slave */
+#define ACK_VAL 0x0                             /*!< I2C ack value */
+#define NACK_VAL 0x1                            /*!< I2C nack value */
+#define INTERRUPT_REG  					0X00
+
+static esp_err_t i2c_master_init(void)
+{
+    int i2c_master_port = I2C_MASTER_NUM;
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_io_num = I2C_MASTER_SCL_IO,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = I2C_MASTER_FREQ_HZ,
+        // .clk_flags = 0,          /*!< Optional, you can use I2C_SCLK_SRC_FLAG_* flags to choose i2c source clock here. */
+    };
+    esp_err_t err = i2c_param_config(i2c_master_port, &conf);
+    if (err != ESP_OK) {
+    	ESP_LOGE(GATTS_TAG, "i2c_param_config() = %d \n", err);
+    	return err;
+    }
+    err = i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
+    ESP_LOGE(GATTS_TAG, "i2c_driver_install() = %d \n", err);
+	return err;
+}
+
+/* AT24C02写入一个字节函数，第一个参数为要写入的值，第二个参数为要写入的地址*/
+static esp_err_t max30102_Bus_Write(uint8_t data_wr, uint16_t WriteAddr)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, WriteAddr % 256, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, data_wr, ACK_CHECK_EN);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+    i2c_cmd_link_delete(cmd);
+
+    ESP_LOGE(GATTS_TAG, "max30102_Bus_Write() = %d \n", ret);
+
+    return ret;
+}
+
+/* AT24C02读取一个字节函数，第一个参数为要读出值的存放指针，第二个参数为要读出的地址*/
+static esp_err_t max30102_Bus_Read(uint8_t* data_rd, uint16_t ReadAddr)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+    i2c_master_write_byte(cmd, ReadAddr % 256, ACK_CHECK_EN);
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+    i2c_master_read_byte(cmd, data_rd, NACK_VAL);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+    i2c_cmd_link_delete(cmd);
+
+    ESP_LOGE(GATTS_TAG, "max30102_Bus_Read() = %d \n", ret);
+
+    return ret;
+}
+
+
+void max30102_init(void)
+{
+
+	max30102_Bus_Write(0x09, 0x0b);  //mode configuration : temp_en[3]      MODE[2:0]=010 HR only enabled    011 SP02 enabled
+	max30102_Bus_Write(0x01, 0xf0); //open all of interrupt
+	max30102_Bus_Write(0X00, 0x00); //all interrupt clear
+	max30102_Bus_Write(0x03, 0x02); //DIE_TEMP_RDY_EN
+	max30102_Bus_Write(0x21, 0x01); //SET   TEMP_EN
+
+	max30102_Bus_Write(0x0a, 0x47); //SPO2_SR[4:2]=001  100 per second    LED_PW[1:0]=11  16BITS
+	max30102_Bus_Write(0x0c, 0x47);
+	max30102_Bus_Write(0x0d, 0x47);
+
+}
+

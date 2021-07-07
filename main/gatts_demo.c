@@ -201,8 +201,8 @@ uint8_t notifyed_b_en=0;
 void example_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 void max30102_init(void);
-static esp_err_t max30102_Bus_Read(uint8_t* data_rd, uint16_t ReadAddr);
-static esp_err_t max30102_Bus_Write(uint8_t data_wr, uint16_t WriteAddr);
+static esp_err_t max30102_Bus_Write(uint16_t WriteAddr, uint8_t data_wr);
+static esp_err_t max30102_Bus_Read( uint16_t ReadAddr, uint8_t* data_rd);
 static esp_err_t i2c_master_init(void);
 
 
@@ -705,6 +705,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 }
 
 unsigned char temp_num=0;
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -791,13 +792,62 @@ void app_main(void)
 
     	}
 
+    	///*
     	max30102_init();
     	ret = max30102_Bus_Read(0x1f, &temp_num);
-    	printf("current temperature = %d\r\n", temp_num);
+    	//printf("current temperature = %d\r\n", temp_num);
+    	ESP_LOGE(GATTS_TAG, "current temperature = %d\r\n", temp_num);
     	vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-
 		ret = max30102_Bus_Read(0xff, &temp_num);
-    	printf("Part ID =  0x%x\r\n", temp_num);
+    	//printf("Part ID =  0x%x\r\n", temp_num);
+		ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\r\n", temp_num);
+    	 //*/
+/*
+    	//       AT24C02 Test I2C
+    	//ret = i2c_master_init();
+    	ret = max30102_Bus_Read(0x03, &temp_num);
+    	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+    	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+		max30102_Bus_Write(0x03, 0x01);//test
+		ESP_LOGE(GATTS_TAG, "write 0x01 into add 0x03\r\n");
+		ret = max30102_Bus_Read(0x03, &temp_num);
+		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+		max30102_Bus_Write(0x03, 0x01);//test
+		ESP_LOGE(GATTS_TAG, "write 0x01 into add 0x03\r\n");
+		ret = max30102_Bus_Read(0x03, &temp_num);
+		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+		max30102_Bus_Write(0x03, 0x66);//test
+		ESP_LOGE(GATTS_TAG, "write 0x66 into add 0x03\r\n");
+		ret = max30102_Bus_Read(0x03, &temp_num);
+		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+		max30102_Bus_Write(0x03, 0xa5);//test
+		ESP_LOGE(GATTS_TAG, "write 0xa5 into add 0x03\r\n");
+		ret = max30102_Bus_Read(0x03, &temp_num);
+		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+		max30102_Bus_Write(0x03, 0xe3);//test
+		ESP_LOGE(GATTS_TAG, "write 0xe3 into add 0x03\r\n");
+		ret = max30102_Bus_Read(0x03, &temp_num);
+		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+		max30102_Bus_Write(0x03, 0xFF);//test
+		ESP_LOGE(GATTS_TAG, "write 0xFF into add 0x03\r\n");
+*/
+		vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
       }
 
     return;
@@ -822,7 +872,8 @@ void app_main(void)
 
 #define I2C_MASTER_TX_BUF_DISABLE 0                           /*!< I2C master doesn't need buffer */
 #define I2C_MASTER_RX_BUF_DISABLE 0                           /*!< I2C master doesn't need buffer */
-#define MAX30102_DeviceAddr 0xAE//设备的I2C的地址
+#define MAX30102_DeviceAddr 0xAE								//SLAVE I2C Address max30102
+//#define MAX30102_DeviceAddr 0xA0								//SLAVE I2C Address 24c02
 
 
 #define WRITE_BIT 0x00                      /*!< I2C master write */
@@ -857,7 +908,7 @@ static esp_err_t i2c_master_init(void)
 }
 
 /* AT24C02写入一个字节函数，第一个参数为要写入的值，第二个参数为要写入的地址*/
-static esp_err_t max30102_Bus_Write(uint8_t data_wr, uint16_t WriteAddr)
+static esp_err_t max30102_Bus_Write(uint16_t WriteAddr, uint8_t data_wr)
 {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
@@ -868,13 +919,14 @@ static esp_err_t max30102_Bus_Write(uint8_t data_wr, uint16_t WriteAddr)
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
 
-    ESP_LOGE(GATTS_TAG, "max30102_Bus_Write() = %d \n", ret);
+    //ESP_LOGE(GATTS_TAG, "max30102_Bus_Write() = %d \n", ret);
 
     return ret;
 }
 
+
 /* AT24C02读取一个字节函数，第一个参数为要读出值的存放指针，第二个参数为要读出的地址*/
-static esp_err_t max30102_Bus_Read(uint8_t* data_rd, uint16_t ReadAddr)
+static esp_err_t max30102_Bus_Read( uint16_t ReadAddr, uint8_t* data_rd)
 {
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
@@ -887,7 +939,7 @@ static esp_err_t max30102_Bus_Read(uint8_t* data_rd, uint16_t ReadAddr)
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
 
-    ESP_LOGE(GATTS_TAG, "max30102_Bus_Read() = %d \n", ret);
+    //ESP_LOGE(GATTS_TAG, "max30102_Bus_Read() = %d \n", ret);
 
     return ret;
 }

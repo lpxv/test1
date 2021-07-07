@@ -707,6 +707,7 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 unsigned char temp_num=0;
 uint8_t spo2_fifo[6];
 uint32_t spo2_data[2];
+TickType_t xTickCount;
 
 void app_main(void)
 {
@@ -797,11 +798,20 @@ void app_main(void)
     	}
     	///*
     	//no interrupter
-    	//if()
-    	MAX30102_Read_FIFO_Data(spo2_fifo);
-    	spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
-    	spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
-        ESP_LOGE(GATTS_TAG, "RED = %d    IR  = %d\n", spo2_data[0], spo2_data[1]);
+    	max30102_Bus_Read(0x00, &temp_num);//read status 1 reg
+    	if(temp_num & 0x40)
+    	{
+    		MAX30102_Read_FIFO_Data(spo2_fifo);
+    		spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
+    		spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
+    		ESP_LOGE(GATTS_TAG, "RED = %d    IR  = %d\n", spo2_data[0], spo2_data[1]);
+    		xTickCount = xTaskGetTickCount();
+    		ESP_LOGE(GATTS_TAG, "Tick = %d\n", xTickCount);//1 tick resp 10ms?
+    	}
+    	else
+    	{
+    		ESP_LOGE(GATTS_TAG, "wait PPG_RDY interupt");
+    	}
         //ESP_LOGE(GATTS_TAG, "spo2_fifo %d--%d--%d--%d %d--%d\n", spo2_fifo[0], spo2_fifo[1],spo2_fifo[2],spo2_fifo[3],spo2_fifo[4],spo2_fifo[5]);
 
     	 //*/
@@ -861,7 +871,7 @@ void app_main(void)
 		max30102_Bus_Write(0x03, 0xFF);//test
 		ESP_LOGE(GATTS_TAG, "write 0xFF into add 0x03\r\n");
 */
-		vTaskDelay(5 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+		vTaskDelay(1 / portTICK_PERIOD_MS);//1ms delay is need for task schedule , otherwise RTOS run abnormal.
 
       }
 
@@ -1081,7 +1091,8 @@ void max30102_init(void)
 	max30102_Bus_Write(FIFO_RD_PTR, 0x00);         //recommend to clear first
 
 	//max30102_Bus_Write(FIFO_CONFIG, 0x0f);         //sample avg = 1, fifo rollover=false, fifo almost full = 17
-	max30102_Bus_Write(FIFO_CONFIG, 0x0f);         //sample avg = 1, fifo rollover=false, fifo almost full = 17
+	max30102_Bus_Write(FIFO_CONFIG, 0x4f);         //sample avg = 4, fifo rollover=false, fifo almost full = 17
+	//max30102_Bus_Write(FIFO_CONFIG, 0xef);         //sample avg = 32, fifo rollover=false, fifo almost full = 17
 	max30102_Bus_Write(MODE_CONFIG, 0x03);         //SpO2 mode. RED and IR
 	max30102_Bus_Write(SPO2_CONFIG, 0x2B);         // SPO2_ADC range = 4096nA, 200Hz, LED pulseWidth (411uS) ,18bit
 	max30102_Bus_Write(DIE_TEMP_CONFIG, 0x01);     //TEMP_EN set 1.

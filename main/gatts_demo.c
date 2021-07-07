@@ -204,7 +204,7 @@ void max30102_init(void);
 static esp_err_t max30102_Bus_Write(uint16_t WriteAddr, uint8_t data_wr);
 static esp_err_t max30102_Bus_Read( uint16_t ReadAddr, uint8_t* data_rd);
 static esp_err_t i2c_master_init(void);
-
+void MAX30102_Read_FIFO_Data(uint8_t *data);
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
@@ -705,6 +705,8 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 }
 
 unsigned char temp_num=0;
+uint8_t spo2_fifo[6];
+uint32_t spo2_data[2];
 
 void app_main(void)
 {
@@ -776,6 +778,8 @@ void app_main(void)
     //--------------------------------------------------------------------------------------------------------------------//
     ret = i2c_master_init();
     ESP_LOGE(GATTS_TAG, "i2c_master_init(), error code = %x", ret);
+    max30102_init();
+
     while(1)
     {
     	if (notifyed_a_en == 1)
@@ -791,17 +795,28 @@ void app_main(void)
         	  printf("send notify failed, maybe the connection not created, pl recheck\n");
 
     	}
-
     	///*
-    	max30102_init();
+    	//no interrupter
+    	//if()
+    	MAX30102_Read_FIFO_Data(spo2_fifo);
+    	spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
+    	spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
+        ESP_LOGE(GATTS_TAG, "RED = %d    IR  = %d\n", spo2_data[0], spo2_data[1]);
+        //ESP_LOGE(GATTS_TAG, "spo2_fifo %d--%d--%d--%d %d--%d\n", spo2_fifo[0], spo2_fifo[1],spo2_fifo[2],spo2_fifo[3],spo2_fifo[4],spo2_fifo[5]);
+
+    	 //*/
+
+         /* //tempureture test ok
+		max30102_Bus_Write(0x21, 0x01); //SET   TEMP_EN	This is a self-clearing bit which, when set, initiates a single temperature reading from the temperature sensor. This bit
+		//clears automatically back to zero at the conclusion of the temperature reading when the bit is set to one in IR or SpO2 mode.
     	ret = max30102_Bus_Read(0x1f, &temp_num);
-    	//printf("current temperature = %d\r\n", temp_num);
-    	ESP_LOGE(GATTS_TAG, "current temperature = %d\r\n", temp_num);
+    	ESP_LOGE(GATTS_TAG, "current temperature Integer = %d\r\n", temp_num);
+    	ret = max30102_Bus_Read(0x20, &temp_num);
+    	ESP_LOGE(GATTS_TAG, "current temperature Fraction = 0.%d\r\n", temp_num);// temp_num * 0.0625
     	vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
 		ret = max30102_Bus_Read(0xff, &temp_num);
-    	//printf("Part ID =  0x%x\r\n", temp_num);
 		ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\r\n", temp_num);
-    	 //*/
+    	 */
 /*
     	//       AT24C02 Test I2C
     	//ret = i2c_master_init();
@@ -846,7 +861,7 @@ void app_main(void)
 		max30102_Bus_Write(0x03, 0xFF);//test
 		ESP_LOGE(GATTS_TAG, "write 0xFF into add 0x03\r\n");
 */
-		vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+		vTaskDelay(5 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
 
       }
 
@@ -884,6 +899,22 @@ void app_main(void)
 #define ACK_VAL 0x0                             /*!< I2C ack value */
 #define NACK_VAL 0x1                            /*!< I2C nack value */
 #define INTERRUPT_REG  					0X00
+
+#define INTERRUPT_STATUS1 0x00
+#define INTERRUPT_STATUS2 0x01
+#define INTERRUPT_ENABLE1 0x02
+#define INTERRUPT_ENABLE2 0x03
+#define FIFO_WR_PTR 0x04
+#define OVERFLOW_COUNTER 0x05
+#define FIFO_RD_PTR 0x06
+#define FIFO_DATA 0x07
+#define FIFO_CONFIG 0x08
+#define MODE_CONFIG 0x09
+#define SPO2_CONFIG 0x0A
+#define LED1_PULSE_AMP 0x0C
+#define LED2_PULSE_AMP 0x0D
+#define DIE_TEMP_CONFIG 0x21
+
 
 static esp_err_t i2c_master_init(void)
 {
@@ -944,19 +975,121 @@ static esp_err_t max30102_Bus_Read( uint16_t ReadAddr, uint8_t* data_rd)
     return ret;
 }
 
+void MAX30102_Read_FIFO_Data(uint8_t *data)
+{
+	/*
+    max30102_Bus_Read(FIFO_DATA, &data[0]);
+    max30102_Bus_Read(FIFO_DATA, &data[1]);
+    max30102_Bus_Read(FIFO_DATA, &data[2]);
+    max30102_Bus_Read(FIFO_DATA, &data[3]);
+    max30102_Bus_Read(FIFO_DATA, &data[4]);
+    max30102_Bus_Read(FIFO_DATA, &data[5]);
+*/
+    //esp_err_t ret = max30102_Bus_Read(FIFO_DATA, &data[5]);
+   // ESP_LOGE(GATTS_TAG, "max30102_Bus_Read() err = %d \n", ret);
+   // ESP_LOGE(GATTS_TAG, "max30102_Bus_Read() data = %d \n", data[0]);
 
+	i2c_cmd_handle_t cmd;
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_DATA, ACK_CHECK_EN);
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+
+	i2c_master_read_byte(cmd, &data[0], ACK_VAL);
+	i2c_master_read_byte(cmd, &data[1], ACK_VAL);
+	i2c_master_read_byte(cmd, &data[2], ACK_VAL);
+	i2c_master_read_byte(cmd, &data[3], ACK_VAL);
+	i2c_master_read_byte(cmd, &data[4], ACK_VAL);
+	i2c_master_read_byte(cmd, &data[5], NACK_VAL);
+
+	i2c_master_stop(cmd);
+	esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	i2c_cmd_link_delete(cmd);
+
+	/*
+    uint8_t fifo_wr_ptr;
+    uint8_t fifo_rd_ptr;
+    uint16_t num_avaliable_samples;
+    i2c_cmd_handle_t cmd;
+
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_WR_PTR, ACK_CHECK_EN);
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+	i2c_master_read_byte(cmd, &fifo_wr_ptr, NACK_VAL);
+	i2c_master_stop(cmd);
+	esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	i2c_cmd_link_delete(cmd);
+
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_RD_PTR, ACK_CHECK_EN);
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+	i2c_master_read_byte(cmd, &fifo_rd_ptr, NACK_VAL);
+	i2c_master_stop(cmd);
+	esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	i2c_cmd_link_delete(cmd);
+
+	num_avaliable_samples = fifo_wr_ptr;
+	num_avaliable_samples = (num_avaliable_samples + 192 )%192 - fifo_rd_ptr;
+	*/
+
+}
+
+
+
+unsigned char temp_a=0;
 void max30102_init(void)
 {
+	/*
 
 	max30102_Bus_Write(0x09, 0x0b);  //mode configuration : temp_en[3]      MODE[2:0]=010 HR only enabled    011 SP02 enabled
 	max30102_Bus_Write(0x01, 0xf0); //open all of interrupt
 	max30102_Bus_Write(0X00, 0x00); //all interrupt clear
 	max30102_Bus_Write(0x03, 0x02); //DIE_TEMP_RDY_EN
 	max30102_Bus_Write(0x21, 0x01); //SET   TEMP_EN
-
 	max30102_Bus_Write(0x0a, 0x47); //SPO2_SR[4:2]=001  100 per second    LED_PW[1:0]=11  16BITS
 	max30102_Bus_Write(0x0c, 0x47);
 	max30102_Bus_Write(0x0d, 0x47);
 
+//macro
+	max30102_Bus_Write(MODE_CONFIG, 0x0b);  //mode configuration : temp_en[3]      MODE[2:0]=010 HR only enabled    011 SP02 enabled
+	max30102_Bus_Write(INTERRUPT_ENABLE1, 0xf0); //open all of interrupt
+	max30102_Bus_Write(INTERRUPT_ENABLE2, 0x00); //all interrupt clear
+	max30102_Bus_Write(INTERRUPT_ENABLE2, 0x02); //DIE_TEMP_RDY_EN
+	max30102_Bus_Write(DIE_TEMP_CONFIG, 0x01); //SET   TEMP_EN
+	max30102_Bus_Write(SPO2_CONFIG, 0x47); //SPO2_SR[4:2]=001  100 per second    LED_PW[1:0]=11  16BITS
+	max30102_Bus_Write(LED1_PULSE_AMP, 0x47);
+	max30102_Bus_Write(LED2_PULSE_AMP, 0x47);
+	*/
+
+	// 主要寄存器配置参数
+	max30102_Bus_Write(MODE_CONFIG, 0X40);         //RESET FIRST
+	vTaskDelay(20 / portTICK_PERIOD_MS);			//20ms delay is need for reset
+
+	max30102_Bus_Write(INTERRUPT_ENABLE1, 0xC0);   // A_FULL_EN, PPG_RDY_EN set to 1.
+	max30102_Bus_Write(INTERRUPT_ENABLE2, 0x02);   //TEMP RDY EN 0x02
+	max30102_Bus_Write(FIFO_WR_PTR, 0x00);         //recommend to clear first
+	max30102_Bus_Write(OVERFLOW_COUNTER, 0x00);    //recommend to clear first
+	max30102_Bus_Write(FIFO_RD_PTR, 0x00);         //recommend to clear first
+
+	//max30102_Bus_Write(FIFO_CONFIG, 0x0f);         //sample avg = 1, fifo rollover=false, fifo almost full = 17
+	max30102_Bus_Write(FIFO_CONFIG, 0x0f);         //sample avg = 1, fifo rollover=false, fifo almost full = 17
+	max30102_Bus_Write(MODE_CONFIG, 0x03);         //SpO2 mode. RED and IR
+	max30102_Bus_Write(SPO2_CONFIG, 0x2B);         // SPO2_ADC range = 4096nA, 200Hz, LED pulseWidth (411uS) ,18bit
+	max30102_Bus_Write(DIE_TEMP_CONFIG, 0x01);     //TEMP_EN set 1.
+
+	max30102_Bus_Write(LED1_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED1(red)
+	max30102_Bus_Write(LED2_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED2(ir)
+
+	max30102_Bus_Read(INTERRUPT_STATUS1, &temp_a);          //clear int flag first.不然可能无法进中断
+	max30102_Bus_Read(INTERRUPT_STATUS2, &temp_a);
 }
 

@@ -804,13 +804,14 @@ void app_main(void)
     		MAX30102_Read_FIFO_Data(spo2_fifo);
     		spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
     		spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
-    		ESP_LOGE(GATTS_TAG, "RED = %d    IR  = %d\n", spo2_data[0], spo2_data[1]);
-    		xTickCount = xTaskGetTickCount();
-    		ESP_LOGE(GATTS_TAG, "Tick = %d\n", xTickCount);//1 tick resp 10ms?
+    		//ESP_LOGE(GATTS_TAG, "RED = %d    IR  = %d\n", spo2_data[0], spo2_data[1]);
+    		printf("%d    %d\n", spo2_data[0], spo2_data[1]);
+    		//xTickCount = xTaskGetTickCount();
+    		//ESP_LOGE(GATTS_TAG, "Tick = %d\n", xTickCount);//1 tick resp 10ms?
     	}
     	else
     	{
-    		ESP_LOGE(GATTS_TAG, "wait PPG_RDY interupt");
+    		//ESP_LOGE(GATTS_TAG, "wait PPG_RDY interupt");
     	}
         //ESP_LOGE(GATTS_TAG, "spo2_fifo %d--%d--%d--%d %d--%d\n", spo2_fifo[0], spo2_fifo[1],spo2_fifo[2],spo2_fifo[3],spo2_fifo[4],spo2_fifo[5]);
 
@@ -1097,8 +1098,10 @@ void max30102_init(void)
 	max30102_Bus_Write(SPO2_CONFIG, 0x2B);         // SPO2_ADC range = 4096nA, 200Hz, LED pulseWidth (411uS) ,18bit
 	max30102_Bus_Write(DIE_TEMP_CONFIG, 0x01);     //TEMP_EN set 1.
 
-	max30102_Bus_Write(LED1_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED1(red)
-	max30102_Bus_Write(LED2_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED2(ir)
+	//max30102_Bus_Write(LED1_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED1(red)
+	//max30102_Bus_Write(LED2_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED2(ir)
+	max30102_Bus_Write(LED1_PULSE_AMP,  0X30);     //Choose value for ~ 6.5mA for LED1(red)
+	max30102_Bus_Write(LED2_PULSE_AMP,  0X20);     //Choose value for ~ 6.5mA for LED2(ir)
 
 	max30102_Bus_Read(INTERRUPT_STATUS1, &temp_a);          //clear int flag first.不然可能无法进中断
 	max30102_Bus_Read(INTERRUPT_STATUS2, &temp_a);

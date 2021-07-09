@@ -200,11 +200,18 @@ uint8_t notifyed_b_en=0;
 
 void example_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
+
+//---------------------------------------------------------------------//
+uint8_t fifo_wr_ptr;
+uint8_t ovf_counter;
+uint8_t fifo_rd_ptr;
+uint16_t num_avaliable_samples;
 void max30102_init(void);
 static esp_err_t max30102_Bus_Write(uint16_t WriteAddr, uint8_t data_wr);
 static esp_err_t max30102_Bus_Read( uint16_t ReadAddr, uint8_t* data_rd);
 static esp_err_t i2c_master_init(void);
 void MAX30102_Read_FIFO_Data(uint8_t *data);
+void MAX30102_Read_FIFO_Data_All (uint8_t *data);
 
 static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param)
 {
@@ -706,8 +713,13 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
 unsigned char temp_num=0;
 uint8_t spo2_fifo[6];
+uint8_t spo2_fifo_burst[32][6];
 uint32_t spo2_data[2];
 TickType_t xTickCount;
+uint8_t count_i;
+uint8_t *ptr;
+uint32_t spo2_data_red;
+uint32_t spo2_data_ir;
 
 void app_main(void)
 {
@@ -799,8 +811,32 @@ void app_main(void)
     	///*
     	//no interrupter
     	max30102_Bus_Read(0x00, &temp_num);//read status 1 reg
+    	//printf(" Interrupt Status = %x\n", temp_num);
+    	if (temp_num & 0x80)
+    	{
+    	    //printf(" INT A_FULL \n");
+    	    //read fifo burst!!!!
+    	    ptr = (uint8_t *)spo2_fifo_burst;
+    	    MAX30102_Read_FIFO_Data_All(ptr);
+
+    	    for (count_i=0; count_i<num_avaliable_samples; count_i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
+    	    {
+//    	    	printf("RED = %d  %d  %d\n", *ptr, *(ptr+1), *(ptr+2));
+//    	    	ptr += 3;
+//    	    	printf("IR  = %d  %d  %d\n", *ptr, *(ptr+1), *(ptr+2));
+//    	    	ptr += 3;
+
+    	    	spo2_data_red = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
+    	    	ptr += 3;
+    	    	spo2_data_ir = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
+    	    	ptr += 3;
+    	    	printf("%d    %d\n", spo2_data_red, spo2_data_ir);// red--- ir
+    	    }
+
+    	}
     	if(temp_num & 0x40)
     	{
+    		printf(" INT PPG_RDY \n");
     		MAX30102_Read_FIFO_Data(spo2_fifo);
     		spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
     		spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
@@ -809,11 +845,15 @@ void app_main(void)
     		//xTickCount = xTaskGetTickCount();
     		//ESP_LOGE(GATTS_TAG, "Tick = %d\n", xTickCount);//1 tick resp 10ms?
     	}
-    	else
+    	if (temp_num & 0x20)
     	{
-    		//ESP_LOGE(GATTS_TAG, "wait PPG_RDY interupt");
+    		printf(" INT ALC_OVF \n");
     	}
-        //ESP_LOGE(GATTS_TAG, "spo2_fifo %d--%d--%d--%d %d--%d\n", spo2_fifo[0], spo2_fifo[1],spo2_fifo[2],spo2_fifo[3],spo2_fifo[4],spo2_fifo[5]);
+    	if (temp_num & 0x10)
+		{
+			printf(" INT PROX_ INT \n");
+		}
+
 
     	 //*/
 
@@ -924,7 +964,9 @@ void app_main(void)
 #define SPO2_CONFIG 0x0A
 #define LED1_PULSE_AMP 0x0C
 #define LED2_PULSE_AMP 0x0D
+#define PILOT_PA 0x10
 #define DIE_TEMP_CONFIG 0x21
+#define PROX_INT_THRESH 0x30
 
 
 static esp_err_t i2c_master_init(void)
@@ -1020,40 +1062,80 @@ void MAX30102_Read_FIFO_Data(uint8_t *data)
 	esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
 	i2c_cmd_link_delete(cmd);
 
-	/*
-    uint8_t fifo_wr_ptr;
-    uint8_t fifo_rd_ptr;
-    uint16_t num_avaliable_samples;
-    i2c_cmd_handle_t cmd;
 
+
+}
+
+
+
+void MAX30102_Read_FIFO_Data_All (uint8_t *data)
+{
+
+	i2c_cmd_handle_t cmd;
+	uint8_t i,j;
+	esp_err_t ret;
+
+	//First transaction: Get the FIFO status
 	cmd = i2c_cmd_link_create();
 	i2c_master_start(cmd);
 	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
 	i2c_master_write_byte(cmd, FIFO_WR_PTR, ACK_CHECK_EN);
 	i2c_master_start(cmd);
 	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
-	i2c_master_read_byte(cmd, &fifo_wr_ptr, NACK_VAL);
+	i2c_master_read_byte(cmd, &fifo_wr_ptr, ACK_VAL);
+	i2c_master_read_byte(cmd, &ovf_counter, ACK_VAL);
+	i2c_master_read_byte(cmd, &fifo_rd_ptr, NACK_VAL);
 	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
 	i2c_cmd_link_delete(cmd);
 
+	if (ovf_counter != 0)
+	{
+		ESP_LOGE(GATTS_TAG, "fifo overflow count = %d \n", ovf_counter);
+	}
+	num_avaliable_samples = ( (fifo_wr_ptr + 32)  - fifo_rd_ptr) % 32;
+
+	//Second transaction: Read NUM_SAMPLES_TO_READ samples from the FIFO
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_DATA, ACK_CHECK_EN);
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+
+	j = num_avaliable_samples*6 - 1;
+	for (i=0; i<j; i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
+	{
+		i2c_master_read_byte(cmd, data++, ACK_VAL);
+	}
+	i2c_master_read_byte(cmd, data, NACK_VAL);//NACK is needed
+
+	i2c_master_stop(cmd);
+	ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	if (ret != ESP_OK)
+	{
+		ESP_LOGE(GATTS_TAG, "i2c_master_cmd_begin() B err = %d \n", ret);
+	}
+	i2c_cmd_link_delete(cmd);
+
+	/*
+	 fifo_rd_ptr = fifo_wr_ptr;
+	//Third transaction: write FIFO_RD_PTR need???
 	cmd = i2c_cmd_link_create();
 	i2c_master_start(cmd);
 	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
 	i2c_master_write_byte(cmd, FIFO_RD_PTR, ACK_CHECK_EN);
-	i2c_master_start(cmd);
-	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
-	i2c_master_read_byte(cmd, &fifo_rd_ptr, NACK_VAL);
+	i2c_master_write_byte(cmd, fifo_rd_ptr, ACK_CHECK_EN);
 	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	if (ret != ESP_OK)
+	{
+		ESP_LOGE(GATTS_TAG, "i2c_master_cmd_begin() err = %d \n", ret);
+	}
 	i2c_cmd_link_delete(cmd);
-
-	num_avaliable_samples = fifo_wr_ptr;
-	num_avaliable_samples = (num_avaliable_samples + 192 )%192 - fifo_rd_ptr;
-	*/
-
+	 */
 }
-
 
 
 unsigned char temp_a=0;
@@ -1080,30 +1162,62 @@ void max30102_init(void)
 	max30102_Bus_Write(LED1_PULSE_AMP, 0x47);
 	max30102_Bus_Write(LED2_PULSE_AMP, 0x47);
 	*/
+	esp_err_t ret;
+	int i=0;
+	//read device ID
+	ret = max30102_Bus_Read(0xfe, &temp_num);
+	ESP_LOGE(GATTS_TAG, "Revision ID =  0x%x\r\n", temp_num);
+	ret = max30102_Bus_Read(0xff, &temp_num);
+	ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\r\n", temp_num);
 
 	// 主要寄存器配置参数
+	//reset first
 	max30102_Bus_Write(MODE_CONFIG, 0X40);         //RESET FIRST
-	vTaskDelay(20 / portTICK_PERIOD_MS);			//20ms delay is need for reset
+	while(1)
+	{
+		max30102_Bus_Read(MODE_CONFIG, &temp_num);
+		if ( temp_num == 0x00 )
+			break;//reset OK
+		vTaskDelay(1 / portTICK_PERIOD_MS);
+		i++;
+		if (i>100)
+		{
+			ESP_LOGE(GATTS_TAG, "reset device timeout\r\n");
+			return;
+		}
+	}
 
-	max30102_Bus_Write(INTERRUPT_ENABLE1, 0xC0);   // A_FULL_EN, PPG_RDY_EN set to 1.
+	//max30102_Bus_Write(INTERRUPT_ENABLE1, 0xC0);   // A_FULL_EN, PPG_RDY_EN set to 1.
+	max30102_Bus_Write(INTERRUPT_ENABLE1, 0xB0);   // A_FULL_EN + ALC_OVF_EN + PROX_INT_EN
 	max30102_Bus_Write(INTERRUPT_ENABLE2, 0x02);   //TEMP RDY EN 0x02
 	max30102_Bus_Write(FIFO_WR_PTR, 0x00);         //recommend to clear first
 	max30102_Bus_Write(OVERFLOW_COUNTER, 0x00);    //recommend to clear first
 	max30102_Bus_Write(FIFO_RD_PTR, 0x00);         //recommend to clear first
 
 	//max30102_Bus_Write(FIFO_CONFIG, 0x0f);         //sample avg = 1, fifo rollover=false, fifo almost full = 17
-	max30102_Bus_Write(FIFO_CONFIG, 0x4f);         //sample avg = 4, fifo rollover=false, fifo almost full = 17
 	//max30102_Bus_Write(FIFO_CONFIG, 0xef);         //sample avg = 32, fifo rollover=false, fifo almost full = 17
+	//max30102_Bus_Write(FIFO_CONFIG, 0x4A);         //sample avg = 4, fifo rollover=false, fifo almost full = 22
+	max30102_Bus_Write(FIFO_CONFIG, 0x5A);         //sample avg = 4, fifo rollover=true, fifo almost full = 22
+
+
 	max30102_Bus_Write(MODE_CONFIG, 0x03);         //SpO2 mode. RED and IR
-	max30102_Bus_Write(SPO2_CONFIG, 0x2B);         // SPO2_ADC range = 4096nA, 200Hz, LED pulseWidth (411uS) ,18bit
+	//max30102_Bus_Write(SPO2_CONFIG, 0x2B);         // SPO2_ADC range = 4096nA, 200Hz, LED pulseWidth (411uS) ,18bit
+	max30102_Bus_Write(SPO2_CONFIG, 0x0B);         // SPO2_ADC range = 2048nA, 200Hz, LED pulseWidth (411uS) ,18bit
+
 	max30102_Bus_Write(DIE_TEMP_CONFIG, 0x01);     //TEMP_EN set 1.
 
 	//max30102_Bus_Write(LED1_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED1(red)
 	//max30102_Bus_Write(LED2_PULSE_AMP,  0X40);     //Choose value for ~ 13mA for LED2(ir)
-	max30102_Bus_Write(LED1_PULSE_AMP,  0X30);     //Choose value for ~ 6.5mA for LED1(red)
-	max30102_Bus_Write(LED2_PULSE_AMP,  0X20);     //Choose value for ~ 6.5mA for LED2(ir)
+	//max30102_Bus_Write(LED1_PULSE_AMP,  0X30);     //Choose value for ~ 6.5mA for LED1(red)
+	//max30102_Bus_Write(LED2_PULSE_AMP,  0X20);     //Choose value for ~ 6.5mA for LED2(ir)
+	max30102_Bus_Write(LED1_PULSE_AMP,  0X15);     //Choose value for ~ 6.5mA for LED1(red)
+	max30102_Bus_Write(LED2_PULSE_AMP,  0X10);     //Choose value for ~ 6.5mA for LED2(ir)
 
-	max30102_Bus_Read(INTERRUPT_STATUS1, &temp_a);          //clear int flag first.不然可能无法进中断
-	max30102_Bus_Read(INTERRUPT_STATUS2, &temp_a);
+
+	max30102_Bus_Write(PILOT_PA,  0X01);     		//PILOT_PA set ir led current
+	max30102_Bus_Write(PROX_INT_THRESH,  0X01);     //PROX_INT_THRESH set ir therohold
+
+	//max30102_Bus_Read(INTERRUPT_STATUS1, &temp_a);          //clear int flag first.不然可能无法进中断
+	//max30102_Bus_Read(INTERRUPT_STATUS2, &temp_a);
 }
 

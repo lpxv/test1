@@ -278,7 +278,9 @@ void max30102_init(void)
 	{
 		max30102_Bus_Read(MODE_CONFIG, &temp_num);
 		if ( temp_num == 0x00 )
+		{
 			break;//reset OK
+		}
 		vTaskDelay(1 / portTICK_PERIOD_MS);
 		i++;
 		if (i>100)
@@ -287,7 +289,9 @@ void max30102_init(void)
 			return;
 		}
 	}
+	vTaskDelay(20 / portTICK_PERIOD_MS);
 
+	ESP_LOGE(GATTS_TAG, "reset device OK, Continue init...\r\n");
 	//max30102_Bus_Write(INTERRUPT_ENABLE1, 0xC0);   // A_FULL_EN, PPG_RDY_EN set to 1.
 	max30102_Bus_Write(INTERRUPT_ENABLE1, 0xB0);   // A_FULL_EN + ALC_OVF_EN + PROX_INT_EN
 	max30102_Bus_Write(INTERRUPT_ENABLE2, 0x02);   //TEMP RDY EN 0x02

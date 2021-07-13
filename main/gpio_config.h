@@ -17,6 +17,11 @@
 #include "freertos/queue.h"
 #include "driver/gpio.h"
 
+#include "max30102.h"
+#include "gatt_demo.h"
+
+extern uint8_t *ptr;
+extern uint8_t spo2_fifo_burst[32][6];
 
 extern void gpio_config_init(void);
 

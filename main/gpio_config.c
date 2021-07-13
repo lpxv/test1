@@ -7,6 +7,7 @@
 #include "gpio_config.h"
 
 
+
 #define GPIO_INPUT_IO_0     4
 #define GPIO_INPUT_PIN_SEL  (1ULL<<GPIO_INPUT_IO_0)
 #define ESP_INTR_FLAG_DEFAULT 0
@@ -19,26 +20,92 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
+unsigned char temp_read=0;
+uint8_t *ptr;
+uint8_t spo2_fifo_burst[32][6];
+uint32_t spo2_data_red;
+uint32_t spo2_data_ir;
+uint8_t count_i;
+TickType_t xTickCount;
+//uint8_t notify_data_test[15]={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
+
 static void gpio_task_example(void* arg)
 {
     uint32_t io_num;
-    for(;;) {
+    uint32_t io_level;
+    esp_err_t ret;
 
-    	printf("gpio_task_example() running_0! \n" );
-    	vTaskDelay(1000 / portTICK_PERIOD_MS);
-    	printf("gpio_task_example() running_1! \n" );
-    	vTaskDelay(1000 / portTICK_PERIOD_MS);
-    	printf("gpio_task_example() running_2! \n" );
+    for(;;)
+    {
+        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY))
+        {
+        	io_level = gpio_get_level(io_num);
+        	printf("GPIO[%d] intr, val: %d\n", io_num, io_level);
 
-        if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
-        	printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
+        	xTickCount = xTaskGetTickCount();
+			printf("Tick = %d\n", xTickCount);//1 tick = 10ms?
+			vTaskDelay(1 / portTICK_PERIOD_MS);
 
-        	if (io_num == 4)
-        		printf("gpio4 falling edge detected! \n" );
+        	if ( (io_num==4) && (io_level==0) )
+			{
+				printf("gpio4 falling edge detected! \n" );
+				//no interrupter
+				temp_read = 0x00;
+				max30102_Bus_Read(0x00, &temp_read);//read status 1 reg
+				printf(" Interrupt Status = %x\n", temp_read);
+/*
+				if (temp_read & 0x80)
+				{
+					//printf(" INT A_FULL \n");
+					//read fifo burst
+					ptr = (uint8_t *)spo2_fifo_burst;
+					MAX30102_Read_FIFO_Data_All(ptr);
+
+					for (count_i=0; count_i<num_avaliable_samples; count_i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
+					{
+						spo2_data_red = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
+						ptr += 3;
+						spo2_data_ir = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
+						ptr += 3;
+						printf("%d    %d\n", spo2_data_red, spo2_data_ir);// red--- ir
+					}
+
+					if (notifyed_a_en == 1)
+					{
+					  printf("ready to send notify\n");
+					  //the size of notify_data[] need less than MTU size
+					  ret = esp_ble_gatts_send_indicate(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, gl_profile_tab[PROFILE_A_APP_ID].conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
+							  num_avaliable_samples*6, ptr, false);
+					  if (ret == ESP_OK)
+						  printf("send notify success \n");
+					  else
+						  printf("send notify failed, maybe the connection not created, pl recheck\n");
+
+					}
+				}
+				if(temp_read & 0x40)
+				{
+					printf(" INT PPG_RDY \n");
+					//MAX30102_Read_FIFO_Data(spo2_fifo);
+					//spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
+					//spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
+					//printf("%d    %d\n", spo2_data[0], spo2_data[1]);
+					//xTickCount = xTaskGetTickCount();
+					//ESP_LOGE(GATTS_TAG, "Tick = %d\n", xTickCount);//1 tick resp 10ms?
+				}
+				if (temp_read & 0x20)
+				{
+					printf(" INT ALC_OVF \n");
+				}
+				if (temp_read & 0x10)
+				{
+					printf(" INT PROX_ INT \n");
+				}
+				*/
+			}
         }
 
-        printf("gpio_task_example() running_3! \n" );
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(20 / portTICK_PERIOD_MS);
     }
 }
 

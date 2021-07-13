@@ -35,21 +35,26 @@
 #include "gpio_config.h"
 #include "max30102.h"
 
-/*
-#include "freertos/FreeRTOS.h"
+#define PROFILE_NUM 2
+#define PROFILE_A_APP_ID 0
+#define PROFILE_B_APP_ID 1
 
-original is
+struct gatts_profile_inst {
+    esp_gatts_cb_t gatts_cb;
+    uint16_t gatts_if;
+    uint16_t app_id;
+    uint16_t conn_id;
+    uint16_t service_handle;
+    esp_gatt_srvc_id_t service_id;
+    uint16_t char_handle;
+    esp_bt_uuid_t char_uuid;
+    esp_gatt_perm_t perm;
+    esp_gatt_char_prop_t property;
+    uint16_t descr_handle;
+    esp_bt_uuid_t descr_uuid;
+};
 
-#ifndef configUSE_TRACE_FACILITY
-	#define configUSE_TRACE_FACILITY 0
-#endif
-
-edit to
-
-#ifndef configUSE_TRACE_FACILITY
-	#define configUSE_TRACE_FACILITY 0
-#endif
-
-*/
+extern uint8_t notifyed_a_en;
+extern struct gatts_profile_inst gl_profile_tab[PROFILE_NUM];
 
 #endif /* MAIN_GATT_DEMO_H_ */

@@ -136,27 +136,13 @@ static esp_ble_adv_params_t adv_params = {
     .adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY,
 };
 
-#define PROFILE_NUM 2
-#define PROFILE_A_APP_ID 0
-#define PROFILE_B_APP_ID 1
 
-struct gatts_profile_inst {
-    esp_gatts_cb_t gatts_cb;
-    uint16_t gatts_if;
-    uint16_t app_id;
-    uint16_t conn_id;
-    uint16_t service_handle;
-    esp_gatt_srvc_id_t service_id;
-    uint16_t char_handle;
-    esp_bt_uuid_t char_uuid;
-    esp_gatt_perm_t perm;
-    esp_gatt_char_prop_t property;
-    uint16_t descr_handle;
-    esp_bt_uuid_t descr_uuid;
-};
+
+
+
 
 /* One gatt-based profile one app_id and one gatts_if, this array will store the gatts_if returned by ESP_GATTS_REG_EVT */
-static struct gatts_profile_inst gl_profile_tab[PROFILE_NUM] = {
+struct gatts_profile_inst gl_profile_tab[PROFILE_NUM] = {
     [PROFILE_A_APP_ID] = {
         .gatts_cb = gatts_profile_a_event_handler,
         .gatts_if = ESP_GATT_IF_NONE,       /* Not get the gatt_if, so initial is ESP_GATT_IF_NONE */
@@ -685,18 +671,13 @@ static void gatts_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_
 
 unsigned char temp_num=0;
 uint8_t spo2_fifo[6];
-uint8_t spo2_fifo_burst[32][6];
 uint32_t spo2_data[2];
-TickType_t xTickCount;
-uint8_t count_i;
-uint8_t *ptr;
-uint32_t spo2_data_red;
-uint32_t spo2_data_ir;
+
 
 void app_main(void)
 {
     esp_err_t ret;
-    uint8_t notify_data_test[15]={1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
+
 
 
     // Initialize NVS.
@@ -761,176 +742,101 @@ void app_main(void)
     //--------------------------------------------------------------------------------------------------------------------//
     // lpx add for i2c test
     //--------------------------------------------------------------------------------------------------------------------//
-    gpio_config_init();
 
+
+    // i2C init first
     ret = i2c_master_init();
     ESP_LOGE(GATTS_TAG, "i2c_master_init(), error code = %x\n", ret);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+
+    // max30102 init second
     max30102_init();
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+
+    //gpio init third
+    gpio_config_init();
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+
+
+    //
+    unsigned char temp_status=0;
+    max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
+    printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
+    ptr = (uint8_t *)spo2_fifo_burst;
+	MAX30102_Read_FIFO_Data_All(ptr);
 
     while(1)
     {
-    	TaskStatus_t *StatusArray;
-    	UBaseType_t task_num;
-    	uint32_t TotalRunTime;
-    	UBaseType_t ArraySize;
-    	int x;
-    	char * InfoBuffer;
+    	printf("app_main() is alive!\n");
+		vTaskDelay(10000 / portTICK_PERIOD_MS);//1ms delay is need for task schedule , otherwise RTOS run abnormal.
 
-    	task_num=uxTaskGetNumberOfTasks();      //获取系统任务数量
-    	printf("uxTaskGetNumberOfTasks %d\r\n", task_num);
-
-    	StatusArray=pvPortMalloc(task_num*sizeof(TaskStatus_t));//申请内存
-    	if(StatusArray!=NULL)                   //内存申请成功
-    	{
-    	    ArraySize=uxTaskGetSystemState((TaskStatus_t*   )StatusArray,   //任务信息存储数组
-    	                                   (UBaseType_t     )task_num,  //任务信息存储数组大小
-    	                                   (uint32_t*       )&TotalRunTime);//保存系统总的运行时间
-
-    	    printf("ArraySize = %d\r\n", ArraySize);
-    	    printf("TaskName\t\tPriority\t\tTaskNumber\t\t\r\n");
-    	    for(x=0;x<task_num;x++)
-    	    {
-    	        printf("%s\t\t%d\t\t\t%d\t\t\t\r\n",
-    	                StatusArray[x].pcTaskName, //任务名称
-    	                (int)StatusArray[x].uxCurrentPriority, //任务优先级
-    	                (int)StatusArray[x].xTaskNumber); //任务编号
-
-    	    }
-    	}
-    	vPortFree(StatusArray); //释放内存
-
-    	 printf("\r\n\r\n\r\n");
-    	vTaskDelay(5000 / portTICK_PERIOD_MS);
-
-
+	    max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
+	    printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
 
     }
-
-    while(1)
-    {
-    	if (notifyed_a_en == 1)
-    	{
-          printf("ready to send notify\n");
-          //the size of notify_data[] need less than MTU size
-          ret = esp_ble_gatts_send_indicate(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, gl_profile_tab[PROFILE_A_APP_ID].conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-                                                         sizeof(notify_data_test), notify_data_test, false);
-
-          if (ret == ESP_OK)
-        	  printf("send notify success \n");
-          else
-        	  printf("send notify failed, maybe the connection not created, pl recheck\n");
-
-    	}
-    	///*
-    	//no interrupter
-    	temp_num = 0x00;
-    	max30102_Bus_Read(0x00, &temp_num);//read status 1 reg
-    	//printf(" Interrupt Status = %x\n", temp_num);
-    	if (temp_num & 0x80)
-    	{
-    	    //printf(" INT A_FULL \n");
-    	    //read fifo burst!!!!
-    	    ptr = (uint8_t *)spo2_fifo_burst;
-    	    MAX30102_Read_FIFO_Data_All(ptr);
-
-    	    for (count_i=0; count_i<num_avaliable_samples; count_i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
-    	    {
-//    	    	printf("RED = %d  %d  %d\n", *ptr, *(ptr+1), *(ptr+2));
-//    	    	ptr += 3;
-//    	    	printf("IR  = %d  %d  %d\n", *ptr, *(ptr+1), *(ptr+2));
-//    	    	ptr += 3;
-
-    	    	spo2_data_red = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
-    	    	ptr += 3;
-    	    	spo2_data_ir = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
-    	    	ptr += 3;
-    	    	printf("%d    %d\n", spo2_data_red, spo2_data_ir);// red--- ir
-    	    }
-
-    	}
-    	if(temp_num & 0x40)
-    	{
-    		printf(" INT PPG_RDY \n");
-    		MAX30102_Read_FIFO_Data(spo2_fifo);
-    		spo2_data[0] = ((spo2_fifo[0]<<16 | spo2_fifo[1]<<8 | spo2_fifo[2]) & 0x03ffff);
-    		spo2_data[1] = ((spo2_fifo[3]<<16 | spo2_fifo[4]<<8 | spo2_fifo[5]) & 0x03ffff);
-    		//ESP_LOGE(GATTS_TAG, "RED = %d    IR  = %d\n", spo2_data[0], spo2_data[1]);
-    		printf("%d    %d\n", spo2_data[0], spo2_data[1]);
-    		//xTickCount = xTaskGetTickCount();
-    		//ESP_LOGE(GATTS_TAG, "Tick = %d\n", xTickCount);//1 tick resp 10ms?
-    	}
-    	if (temp_num & 0x20)
-    	{
-    		printf(" INT ALC_OVF \n");
-    	}
-    	if (temp_num & 0x10)
-		{
-			printf(" INT PROX_ INT \n");
-		}
-
-
-    	 //*/
-
-         /* //tempureture test ok
-		max30102_Bus_Write(0x21, 0x01); //SET   TEMP_EN	This is a self-clearing bit which, when set, initiates a single temperature reading from the temperature sensor. This bit
-		//clears automatically back to zero at the conclusion of the temperature reading when the bit is set to one in IR or SpO2 mode.
-    	ret = max30102_Bus_Read(0x1f, &temp_num);
-    	ESP_LOGE(GATTS_TAG, "current temperature Integer = %d\r\n", temp_num);
-    	ret = max30102_Bus_Read(0x20, &temp_num);
-    	ESP_LOGE(GATTS_TAG, "current temperature Fraction = 0.%d\r\n", temp_num);// temp_num * 0.0625
-    	vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-		ret = max30102_Bus_Read(0xff, &temp_num);
-		ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\r\n", temp_num);
-    	 */
-/*
-    	//       AT24C02 Test I2C
-    	//ret = i2c_master_init();
-    	ret = max30102_Bus_Read(0x03, &temp_num);
-    	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
-
-    	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-
-		max30102_Bus_Write(0x03, 0x01);//test
-		ESP_LOGE(GATTS_TAG, "write 0x01 into add 0x03\r\n");
-		ret = max30102_Bus_Read(0x03, &temp_num);
-		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
-
-		max30102_Bus_Write(0x03, 0x01);//test
-		ESP_LOGE(GATTS_TAG, "write 0x01 into add 0x03\r\n");
-		ret = max30102_Bus_Read(0x03, &temp_num);
-		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
-
-		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-
-		max30102_Bus_Write(0x03, 0x66);//test
-		ESP_LOGE(GATTS_TAG, "write 0x66 into add 0x03\r\n");
-		ret = max30102_Bus_Read(0x03, &temp_num);
-		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
-
-		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-
-		max30102_Bus_Write(0x03, 0xa5);//test
-		ESP_LOGE(GATTS_TAG, "write 0xa5 into add 0x03\r\n");
-		ret = max30102_Bus_Read(0x03, &temp_num);
-		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
-
-		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-
-		max30102_Bus_Write(0x03, 0xe3);//test
-		ESP_LOGE(GATTS_TAG, "write 0xe3 into add 0x03\r\n");
-		ret = max30102_Bus_Read(0x03, &temp_num);
-		ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
-
-		//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
-
-		max30102_Bus_Write(0x03, 0xFF);//test
-		ESP_LOGE(GATTS_TAG, "write 0xFF into add 0x03\r\n");
-*/
-		vTaskDelay(1000 / portTICK_PERIOD_MS);//1ms delay is need for task schedule , otherwise RTOS run abnormal.
-
-      }
-
     return;
 }
+
+
+
+
+//---------------------debuge code------------------------//
+
+     /* //tempureture test ok
+	max30102_Bus_Write(0x21, 0x01); //SET   TEMP_EN	This is a self-clearing bit which, when set, initiates a single temperature reading from the temperature sensor. This bit
+	//clears automatically back to zero at the conclusion of the temperature reading when the bit is set to one in IR or SpO2 mode.
+	ret = max30102_Bus_Read(0x1f, &temp_num);
+	ESP_LOGE(GATTS_TAG, "current temperature Integer = %d\r\n", temp_num);
+	ret = max30102_Bus_Read(0x20, &temp_num);
+	ESP_LOGE(GATTS_TAG, "current temperature Fraction = 0.%d\r\n", temp_num);// temp_num * 0.0625
+	vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+	ret = max30102_Bus_Read(0xff, &temp_num);
+	ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\r\n", temp_num);
+	 */
+
+/*
+	//       AT24C02 Test I2C
+	//ret = i2c_master_init();
+	ret = max30102_Bus_Read(0x03, &temp_num);
+	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+	max30102_Bus_Write(0x03, 0x01);//test
+	ESP_LOGE(GATTS_TAG, "write 0x01 into add 0x03\r\n");
+	ret = max30102_Bus_Read(0x03, &temp_num);
+	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+	max30102_Bus_Write(0x03, 0x01);//test
+	ESP_LOGE(GATTS_TAG, "write 0x01 into add 0x03\r\n");
+	ret = max30102_Bus_Read(0x03, &temp_num);
+	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+	max30102_Bus_Write(0x03, 0x66);//test
+	ESP_LOGE(GATTS_TAG, "write 0x66 into add 0x03\r\n");
+	ret = max30102_Bus_Read(0x03, &temp_num);
+	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+	max30102_Bus_Write(0x03, 0xa5);//test
+	ESP_LOGE(GATTS_TAG, "write 0xa5 into add 0x03\r\n");
+	ret = max30102_Bus_Read(0x03, &temp_num);
+	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+	max30102_Bus_Write(0x03, 0xe3);//test
+	ESP_LOGE(GATTS_TAG, "write 0xe3 into add 0x03\r\n");
+	ret = max30102_Bus_Read(0x03, &temp_num);
+	ESP_LOGE(GATTS_TAG, "data in add 0x03 = %x\r\n", temp_num);
+
+	//vTaskDelay(1000 / portTICK_PERIOD_MS);//1s delay is need for task schedule , otherwise RTOS run abnormal.
+
+	max30102_Bus_Write(0x03, 0xFF);//test
+	ESP_LOGE(GATTS_TAG, "write 0xFF into add 0x03\r\n");
+*/
 
 

@@ -16,27 +16,7 @@
 ****************************************************************************/
 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_system.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "esp_bt.h"
-
-#include "esp_gap_ble_api.h"
-#include "esp_gatts_api.h"
-#include "esp_bt_defs.h"
-#include "esp_bt_main.h"
-#include "esp_gatt_common_api.h"
-
-#include "sdkconfig.h"
-//#include "MAX30102.h"
-
-#include "driver/i2c.h"
+#include "gatt_demo.h"
 
 
 #define GATTS_TAG "GATTS_DEMO"
@@ -789,6 +769,7 @@ void app_main(void)
     //--------------------------------------------------------------------------------------------------------------------//
     // lpx add for i2c test
     //--------------------------------------------------------------------------------------------------------------------//
+    gpio_config_init();
     ret = i2c_master_init();
     ESP_LOGE(GATTS_TAG, "i2c_master_init(), error code = %x", ret);
     max30102_init();
@@ -810,6 +791,7 @@ void app_main(void)
     	}
     	///*
     	//no interrupter
+    	temp_num = 0x00;
     	max30102_Bus_Read(0x00, &temp_num);//read status 1 reg
     	//printf(" Interrupt Status = %x\n", temp_num);
     	if (temp_num & 0x80)
@@ -1166,13 +1148,14 @@ void max30102_init(void)
 	int i=0;
 	//read device ID
 	ret = max30102_Bus_Read(0xfe, &temp_num);
-	ESP_LOGE(GATTS_TAG, "Revision ID =  0x%x\r\n", temp_num);
+	ESP_LOGE(GATTS_TAG, "Revision ID =  0x%x\n", temp_num);
 	ret = max30102_Bus_Read(0xff, &temp_num);
-	ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\r\n", temp_num);
+	ESP_LOGE(GATTS_TAG, "Part ID =  0x%x\n", temp_num);
 
 	// 主要寄存器配置参数
 	//reset first
 	max30102_Bus_Write(MODE_CONFIG, 0X40);         //RESET FIRST
+	temp_num = 0x12;// give a value before read.
 	while(1)
 	{
 		max30102_Bus_Read(MODE_CONFIG, &temp_num);

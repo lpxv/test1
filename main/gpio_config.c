@@ -23,12 +23,22 @@ static void gpio_task_example(void* arg)
 {
     uint32_t io_num;
     for(;;) {
+
+    	printf("gpio_task_example() running_0! \n" );
+    	vTaskDelay(1000 / portTICK_PERIOD_MS);
+    	printf("gpio_task_example() running_1! \n" );
+    	vTaskDelay(1000 / portTICK_PERIOD_MS);
+    	printf("gpio_task_example() running_2! \n" );
+
         if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
         	printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
 
         	if (io_num == 4)
         		printf("gpio4 falling edge detected! \n" );
         }
+
+        printf("gpio_task_example() running_3! \n" );
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -42,8 +52,11 @@ void gpio_config_init(void)
     io_conf.pin_bit_mask = GPIO_INPUT_PIN_SEL;
     //set as input mode
     io_conf.mode = GPIO_MODE_INPUT;
+
     //enable pull-up mode
     io_conf.pull_up_en = 1;
+    io_conf.pull_down_en = 0;
+
     gpio_config(&io_conf);
 
     //change gpio intrrupt type for one pin
@@ -52,7 +65,7 @@ void gpio_config_init(void)
     //create a queue to handle gpio event from isr
     gpio_evt_queue = xQueueCreate(10, sizeof(uint32_t));
     //start gpio task prio=3
-    xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 3, NULL);
+    xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 10, NULL);
 
     //install gpio isr service
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);

@@ -30,6 +30,26 @@
 //#include "MAX30102.h"
 
 #include "driver/i2c.h"
+
+
 #include "gpio_config.h"
+#include "max30102.h"
+
+/*
+#include "freertos/FreeRTOS.h"
+
+original is
+
+#ifndef configUSE_TRACE_FACILITY
+	#define configUSE_TRACE_FACILITY 0
+#endif
+
+edit to
+
+#ifndef configUSE_TRACE_FACILITY
+	#define configUSE_TRACE_FACILITY 0
+#endif
+
+*/
 
 #endif /* MAIN_GATT_DEMO_H_ */

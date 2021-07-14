@@ -753,25 +753,33 @@ void app_main(void)
     max30102_init();
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
+/*
+    unsigned char temp_status=0;
+    while (temp_status!=0x80)
+    {
+    	max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
+    	printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
+    	vTaskDelay(20 / portTICK_PERIOD_MS);
+    }
+    */
     //gpio init third
     gpio_config_init();
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
 
-    //
-    unsigned char temp_status=0;
+    /*
     max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
     printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
     ptr = (uint8_t *)spo2_fifo_burst;
 	MAX30102_Read_FIFO_Data_All(ptr);
-
+*/
     while(1)
     {
     	printf("app_main() is alive!\n");
 		vTaskDelay(10000 / portTICK_PERIOD_MS);//1ms delay is need for task schedule , otherwise RTOS run abnormal.
 
-	    max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
-	    printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
+
+
 
     }
     return;

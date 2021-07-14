@@ -25,4 +25,8 @@ extern uint8_t spo2_fifo_burst[32][6];
 
 extern void gpio_config_init(void);
 
+#ifndef GATTS_TAG
+#define GATTS_TAG "GATTS_DEMO"
+#endif
+
 #endif /* MAIN_GPIO_CONFIG_H_ */

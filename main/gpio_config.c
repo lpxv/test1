@@ -49,11 +49,13 @@ static void gpio_task_example(void* arg)
         	if ( (io_num==4) && (io_level==0) )
 			{
 				printf("gpio4 falling edge detected! \n" );
+
+//-----------------------------Interrupt Status 0------------------------------//
 				//no interrupter
-				temp_read = 0x00;
+				temp_read = 0x01;
 				max30102_Bus_Read(0x00, &temp_read);//read status 1 reg
-				printf(" Interrupt Status = %x\n", temp_read);
-/*
+				printf(" Interrupt Status 0  = %x\n", temp_read);
+
 				if (temp_read & 0x80)
 				{
 					//printf(" INT A_FULL \n");
@@ -75,7 +77,7 @@ static void gpio_task_example(void* arg)
 					  printf("ready to send notify\n");
 					  //the size of notify_data[] need less than MTU size
 					  ret = esp_ble_gatts_send_indicate(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, gl_profile_tab[PROFILE_A_APP_ID].conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
-							  num_avaliable_samples*6, ptr, false);
+							  num_avaliable_samples*6, spo2_fifo_burst, false);
 					  if (ret == ESP_OK)
 						  printf("send notify success \n");
 					  else
@@ -101,7 +103,25 @@ static void gpio_task_example(void* arg)
 				{
 					printf(" INT PROX_ INT \n");
 				}
-				*/
+				if (temp_read & 0x01)
+				{
+					printf(" INT PWR_RDY \n");
+				}
+//-----------------------------Interrupt Status 1------------------------------//
+				temp_read = 0x01;
+				max30102_Bus_Read(0x01, &temp_read);//read status 1 reg
+				printf(" Interrupt Status 1  = %x\n", temp_read);
+				if (temp_read & 0x02)
+				{
+
+					printf(" INT DIE_TEMP_RDY \n");
+					ret = max30102_Bus_Read(0x1f, &temp_read);
+					ESP_LOGE(GATTS_TAG, "current temperature Integer = %d\r\n", temp_read);
+					ret = max30102_Bus_Read(0x20, &temp_read);
+					ESP_LOGE(GATTS_TAG, "current temperature Fraction = 0.%d\r\n", temp_read);// temp_num * 0.0625
+				}
+
+
 			}
         }
 

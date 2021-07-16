@@ -62,7 +62,7 @@ static void gpio_task_example(void* arg)
 					//read fifo burst
 					ptr = (uint8_t *)spo2_fifo_burst;
 					MAX30102_Read_FIFO_Data_All(ptr);
-
+					/*
 					for (count_i=0; count_i<num_avaliable_samples; count_i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
 					{
 						spo2_data_red = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
@@ -71,6 +71,7 @@ static void gpio_task_example(void* arg)
 						ptr += 3;
 						printf("%d    %d\n", spo2_data_red, spo2_data_ir);// red--- ir
 					}
+					*/
 
 					if (notifyed_a_en == 1)
 					{
@@ -82,6 +83,18 @@ static void gpio_task_example(void* arg)
 						  printf("send notify success \n");
 					  else
 						  printf("send notify failed, maybe the connection not created, pl recheck\n");
+
+					  ptr = (uint8_t *)spo2_fifo_burst;
+					  for(count_i=0; count_i<num_avaliable_samples; count_i++)
+					  {
+						  printf("%2x", *ptr++);
+						  printf("%2x", *ptr++);
+						  printf("%2x", *ptr++);
+						  printf("%2x", *ptr++);
+						  printf("%2x", *ptr++);
+						  printf("%2x", *ptr++);
+					  }
+					  printf("\n");
 
 					}
 				}

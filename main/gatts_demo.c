@@ -26,10 +26,10 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
 static void gatts_profile_b_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_t gatts_if, esp_ble_gatts_cb_param_t *param);
 
 
-#define GATTS_SERVICE_UUID_TEST_A   0x00FF
-#define GATTS_CHAR_UUID_TEST_A      0xFF01
+#define GATTS_SERVICE_UUID_TEST_A   0x00FF//service A
+#define GATTS_CHAR_UUID_TEST_A      0xFF01//service
 #define GATTS_DESCR_UUID_TEST_A     0x3333
-#define GATTS_NUM_HANDLE_TEST_A     4
+#define GATTS_NUM_HANDLE_TEST_A     4//number of handle requested for this service.
 
 #define GATTS_SERVICE_UUID_TEST_B   0x00EE
 #define GATTS_CHAR_UUID_TEST_B      0xEE01
@@ -166,6 +166,7 @@ uint8_t notifyed_b_en=0;
 
 void example_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
 void example_exec_write_event_env(prepare_type_env_t *prepare_write_env, esp_ble_gatts_cb_param_t *param);
+static void tpa_task(void* arg);
 
 //---------------------------------------------------------------------//
 
@@ -678,8 +679,6 @@ void app_main(void)
 {
     esp_err_t ret;
 
-
-
     // Initialize NVS.
     ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -753,39 +752,32 @@ void app_main(void)
     max30102_init();
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
-/*
-    unsigned char temp_status=0;
-    while (temp_status!=0x80)
-    {
-    	max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
-    	printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
-    	vTaskDelay(20 / portTICK_PERIOD_MS);
-    }
-    */
     //gpio init third
     gpio_config_init();
     vTaskDelay(10 / portTICK_PERIOD_MS);
 
+    //creat an temperature period acquire task
+    //start gpio task prio=3
+    xTaskCreate(tpa_task, "tpa_task", 1024, NULL, 50, NULL);
 
-    /*
-    max30102_Bus_Read(0x00, &temp_status);//read status 1 reg
-    printf("after initialization INTERRUPT_STATUS1=%d\n", temp_status);
-    ptr = (uint8_t *)spo2_fifo_burst;
-	MAX30102_Read_FIFO_Data_All(ptr);
-*/
     while(1)
     {
     	printf("app_main() is alive!\n");
 		vTaskDelay(10000 / portTICK_PERIOD_MS);//1ms delay is need for task schedule , otherwise RTOS run abnormal.
-
-
-
-
     }
     return;
 }
 
 
+static void tpa_task(void* arg)
+{
+	while(1)
+	{
+		// start the temperature adc acquire temperature data only once
+		max30102_Bus_Write(0x21, 0x01);
+		vTaskDelay(3000 / portTICK_PERIOD_MS);
+	}
+}
 
 
 //---------------------debuge code------------------------//

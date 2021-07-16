@@ -40,21 +40,21 @@ static void gpio_task_example(void* arg)
         if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY))
         {
         	io_level = gpio_get_level(io_num);
-        	printf("GPIO[%d] intr, val: %d\n", io_num, io_level);
+        	//printf("GPIO[%d] intr, val: %d\n", io_num, io_level);
 
         	xTickCount = xTaskGetTickCount();
-			printf("Tick = %d\n", xTickCount);//1 tick = 10ms?
+			//printf("Tick = %d\n", xTickCount);//1 tick = 10ms?
 			vTaskDelay(1 / portTICK_PERIOD_MS);
 
         	if ( (io_num==4) && (io_level==0) )
 			{
-				printf("gpio4 falling edge detected! \n" );
+				//printf("gpio4 falling edge detected! \n" );
 
 //-----------------------------Interrupt Status 0------------------------------//
 				//no interrupter
 				temp_read = 0x01;
 				max30102_Bus_Read(0x00, &temp_read);//read status 1 reg
-				printf(" Interrupt Status 0  = %x\n", temp_read);
+				//printf(" Interrupt Status 0  = %x\n", temp_read);
 
 				if (temp_read & 0x80)
 				{
@@ -75,10 +75,20 @@ static void gpio_task_example(void* arg)
 
 					if (notifyed_a_en == 1)
 					{
-					  printf("ready to send notify\n");
+						for (count_i=0; count_i<num_avaliable_samples; count_i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
+						{
+							spo2_data_red = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
+							ptr += 3;
+							spo2_data_ir = ( ( (*ptr<<16) + (*(ptr+1)<<8) + (*(ptr+2)) ) & 0x03ffff );
+							ptr += 3;
+							printf("%d    %d\n", spo2_data_red, spo2_data_ir);// red--- ir
+						}
+
+					  //printf("ready to send notify\n");
 					  //the size of notify_data[] need less than MTU size
 					  ret = esp_ble_gatts_send_indicate(gl_profile_tab[PROFILE_A_APP_ID].gatts_if, gl_profile_tab[PROFILE_A_APP_ID].conn_id, gl_profile_tab[PROFILE_A_APP_ID].char_handle,
 							  num_avaliable_samples*6, spo2_fifo_burst, false);
+					  /*
 					  if (ret == ESP_OK)
 						  printf("send notify success \n");
 					  else
@@ -95,6 +105,7 @@ static void gpio_task_example(void* arg)
 						  printf("%2x", *ptr++);
 					  }
 					  printf("\n");
+					  */
 
 					}
 				}
@@ -122,16 +133,16 @@ static void gpio_task_example(void* arg)
 				}
 //-----------------------------Interrupt Status 1------------------------------//
 				temp_read = 0x01;
-				max30102_Bus_Read(0x01, &temp_read);//read status 1 reg
-				printf(" Interrupt Status 1  = %x\n", temp_read);
+				max30102_Bus_Read(0x01, &temp_read);//read status 2 reg
+				//printf(" Interrupt Status 1  = %x\n", temp_read);
 				if (temp_read & 0x02)
 				{
 
-					printf(" INT DIE_TEMP_RDY \n");
+					//printf(" INT DIE_TEMP_RDY \n");
 					ret = max30102_Bus_Read(0x1f, &temp_read);
-					ESP_LOGE(GATTS_TAG, "current temperature Integer = %d\r\n", temp_read);
+					//ESP_LOGE(GATTS_TAG, "current temperature Integer = %d\r\n", temp_read);
 					ret = max30102_Bus_Read(0x20, &temp_read);
-					ESP_LOGE(GATTS_TAG, "current temperature Fraction = 0.%d\r\n", temp_read);// temp_num * 0.0625
+					//ESP_LOGE(GATTS_TAG, "current temperature Fraction = 0.%d\r\n", temp_read);// temp_num * 0.0625
 				}
 
 

@@ -167,7 +167,7 @@ void MAX30102_Read_FIFO_Data(uint8_t *data)
 
 
 
-void MAX30102_Read_FIFO_Data_All (uint8_t *data)
+void MAX30102_Read_FIFO_Data_All_backup (uint8_t *data)
 {
 
 	i2c_cmd_handle_t cmd;
@@ -236,6 +236,75 @@ void MAX30102_Read_FIFO_Data_All (uint8_t *data)
 	 */
 }
 
+void MAX30102_Read_FIFO_Data_All (uint8_t *data)
+{
+
+	i2c_cmd_handle_t cmd;
+	uint8_t i,j;
+	esp_err_t ret;
+
+	//First transaction: Get the FIFO status
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_WR_PTR, ACK_CHECK_EN);
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+	i2c_master_read_byte(cmd, &fifo_wr_ptr, ACK_VAL);
+	i2c_master_read_byte(cmd, &ovf_counter, ACK_VAL);
+	i2c_master_read_byte(cmd, &fifo_rd_ptr, NACK_VAL);
+	i2c_master_stop(cmd);
+	ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	i2c_cmd_link_delete(cmd);
+
+	if (ovf_counter != 0)
+	{
+		ESP_LOGE(GATTS_TAG, "fifo overflow count = %d \n", ovf_counter);
+	}
+	num_avaliable_samples = ( (fifo_wr_ptr + 32)  - fifo_rd_ptr) % 32;
+
+	//Second transaction: Read NUM_SAMPLES_TO_READ samples from the FIFO
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_DATA, ACK_CHECK_EN);
+
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | READ_BIT, ACK_CHECK_EN);
+
+	j = num_avaliable_samples*6 - 1;
+	for (i=0; i<j; i++)//这里怎么考虑队列的长度？cmd究竟可以放多少的队列？
+	{
+		i2c_master_read_byte(cmd, data++, ACK_VAL);
+	}
+	i2c_master_read_byte(cmd, data, NACK_VAL);//NACK is needed
+
+	i2c_master_stop(cmd);
+	ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	if (ret != ESP_OK)
+	{
+		ESP_LOGE(GATTS_TAG, "i2c_master_cmd_begin() B err = %d \n", ret);
+	}
+	i2c_cmd_link_delete(cmd);
+
+
+
+	//Third transaction: write FIFO_RD_PTR need???
+	fifo_rd_ptr = fifo_wr_ptr;
+	cmd = i2c_cmd_link_create();
+	i2c_master_start(cmd);
+	i2c_master_write_byte(cmd, MAX30102_DeviceAddr | WRITE_BIT, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, FIFO_RD_PTR, ACK_CHECK_EN);
+	i2c_master_write_byte(cmd, fifo_rd_ptr, ACK_CHECK_EN);
+	i2c_master_stop(cmd);
+	ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_RATE_MS);
+	if (ret != ESP_OK)
+	{
+		ESP_LOGE(GATTS_TAG, "i2c_master_cmd_begin() err = %d \n", ret);
+	}
+	i2c_cmd_link_delete(cmd);
+
+}
 
 unsigned char temp_a=0;
 void max30102_init(void)
